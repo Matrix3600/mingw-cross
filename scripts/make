@@ -1,71 +1,141 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-set -e
+# This script only runs on Linux.
+# It needs a case-sensitive file system (prerequisite for crosstool-ng).
+
+set -e -o pipefail
+
+
+function get_build_machine_type()
+{
+	local system="linux"
+	case $(uname -s) in
+		Linux) ;;
+		*) echo "uname -s: \"$(uname -s)\"" >&2 ;;
+	esac
+	local arch=""
+	case $(uname -m) in
+		i?86) arch="x86" ;;
+		x86_64|amd64) arch="x64" ;;
+		aarch64*|arm64|armv8*) arch="arm64" ;;
+		*) echo "uname -m: \"$(uname -m)\"" >&2 ;;
+	esac
+	if [ -n "$arch" ]; then printf '%s\n' "${system}-${arch}"
+	else printf '%s\n' "$system"
+	fi
+}
+
+
+function install_packages()
+{
+	local packages="\
+		autoconf \
+		automake \
+		bison \
+		bzip2 \
+		flex \
+		g++ \
+		gawk \
+		gcc \
+		git \
+		gperf \
+		help2man \
+		libncurses-dev \
+		libtool-bin \
+		make \
+		patch \
+		python3 \
+		rsync \
+		texinfo \
+		unzip \
+		wget \
+		xz-utils \
+		"
+	sudo apt-get update
+	sudo apt-get install -y --no-install-recommends $packages
+}
+
+
+function build_target()
+{
+	local TARGET="$1"
+
+	sudo rm -rf build
+	mkdir build
+	pushd build
+	cp "../targets/${TARGET}/config" .config
+	cat <<- EOF >> .config
+		CT_CONFIG_VERSION="4"
+		CT_EXPERIMENTAL=y
+		CT_LOCAL_TARBALLS_DIR="../source-tarballs"
+		CT_PREFIX_DIR="mingw-cross"
+		CT_CONNECT_TIMEOUT=120
+		CT_DOWNLOAD_WGET_OPTIONS="--tries=20 -nc --progress=dot:binary"
+		# CT_LOG_PROGRESS_BAR is not set
+		# CT_SHOW_CT_VERSION is not set
+	EOF
+	/opt/crosstool-ng/bin/ct-ng olddefconfig
+	echo -e "\n*** CT config ***\n"
+	cat .config
+	echo -e "\n******\n"
+
+	/opt/crosstool-ng/bin/ct-ng build
+
+	# Tarball
+	sudo rm -rf ${TARGET}
+	mv mingw-cross ${TARGET}
+	sudo chown -R root:0 ${TARGET}
+
+	local host_name="$(get_build_machine_type)"
+
+	local name="${host_name}_${TARGET}.tar.xz"
+	echo -e "\nCreating \"${name}\" ...\n"
+	tar -cJvf "../${name}" "${TARGET}"
+	local hash="$(sha256sum "../${name}" | awk '{ print $1 }')"
+	printf '%s *%s\n' "$hash" "$name" > "../${name}.sha256"
+	popd
+	sudo rm -rf build
+}
+
 
 TARGET=$1
 
-# packages
-sudo apt-get update
-sudo apt-get install -y --no-install-recommends \
-  automake \
-  bison \
-  bzip2 \
-  ca-certificates \
-  curl \
-  file \
-  flex \
-  g++ \
-  gawk \
-  gdb \
-  git \
-  gperf \
-  help2man \
-  libncurses-dev \
-  libssl-dev \
-  libtool-bin \
-  make \
-  patch \
-  pkg-config \
-  python3 \
-  rsync \
-  texinfo \
-  unzip \
-  wget \
-  xz-utils
+if [ -z "$TARGET" ]; then
+	echo "[ERROR] Target is missing."
+	exit 1
+fi
 
-# patch
+if [ ! -f "targets/${TARGET}/config" ]; then
+	echo "[ERROR] Target not supported (${TARGET})."
+	exit 1
+fi
+
+install_packages
+
+# Patch
 pushd builder
 git reset --hard HEAD
-git clean -fd
+git clean -fdx
 for i in ../targets/${TARGET}/*; do
-    if [[ $i == *.patch ]]; then
-        patch -Np1 -i $i
-    fi
+	if [[ $i == *.patch ]]; then
+		patch -Np1 -i $i
+	fi
 done
+if [ -d "../patches" ]; then
+	cp -rpv "../patches/." "packages/"
+fi
 popd
 
-# crosstool-ng
+# crosstool-NG
 sudo mkdir -p /opt
-sudo chmod 0777 /opt
-sudo rm -rf /opt/ct-ng
+sudo rm -rf /opt/crosstool-ng
 pushd builder
 ./bootstrap
-./configure --prefix=/opt/ct-ng
+./configure --prefix=/opt/crosstool-ng
 make -j`nproc`
 sudo make install
 popd
 
-# build
-rm -rf build
-mkdir -p build
-cp targets/${TARGET}/config build/.config
-pushd build
-/opt/ct-ng/bin/ct-ng olddefconfig
-/opt/ct-ng/bin/ct-ng build
-popd
+build_target "$TARGET"
 
-# tarball
-sudo mv /opt/x-tools/${TARGET} .
-sudo chown -R root:root ${TARGET}
-sudo tar -cJvf ${TARGET}.tar.xz ${TARGET}
-sudo sha256sum ${TARGET}.tar.xz | awk '{ print $1 }' > ${TARGET}.tar.xz.sha256
+echo -e "\nDone.\n"

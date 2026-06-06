@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+
+PACKAGES_DIR="builder/packages"
+CT_VERIFY_DOWNLOAD_DIGEST_ALG="sha512"
+
+#
+# Verify the file against a known digest.
+#
+# CT_DoVerifyDigest <local-file-path> <package-directory>
+#
+CT_DoVerifyDigest()
+{
+	local path="$1"
+	local file="${path##*/}"
+	local dir="${path%/*}"
+	local pkgdir="builder/packages/$2"
+	local alg="${CT_VERIFY_DOWNLOAD_DIGEST_ALG}"
+	local chksum a f c
+
+	if [ ! -r "${pkgdir}/chksum" ]; then
+		echo "[WARN] Not verifying '${file}': digest missing"
+		return 0
+	fi
+	echo "Verifying ${alg} checksum for '${file}'"
+	chksum=`"${alg}sum" "${path}"`
+	chksum="${chksum%%[[:space:]]*}"
+	while read a f c; do
+		if [ "${a}" != "${alg}" -o "${f}" != "${file}" ]; then
+			continue
+		fi
+		if [ "${c}" = "${chksum}" ]; then
+			# echo "[DEBUG] Correct ${alg} digest for ${file}: ${chksum}"
+			return 0
+		else
+			echo "[ERROR] Bad ${alg} digest for ${file}: ${chksum}, expect ${c}"
+			return 1
+		fi
+	done < "${pkgdir}/chksum"
+	echo "[WARN] Downloaded file ${file} reference digest not available"
+	return 0
+}
+
+
+#
+# Get the latest version of a package.
+#
+# get_package_version <package-name>
+#
+get_package_version() {
+	local pkgdir="${PACKAGES_DIR}/$1"
+	if [ ! -d "$pkgdir" ]; then return 1; fi
+
+	local version="$({ cd "$pkgdir" && ls -dv -- */ | tail -n 1; } \
+		2>/dev/null)"
+	version=${version%/}
+	if [ -z "$version" ]; then return 2; fi
+
+	printf '%s' "$version"
+	return 0
+}
+
+
+trim() {
+	local var="$1"
+	# Remove leading whitespace characters
+	var="${var#"${var%%[![:space:]]*}"}"
+	# Remove trailing whitespace characters
+	var="${var%"${var##*[![:space:]]}"}"
+	printf '%s' "$var"
+}
+
+
+destdir=$1
+if [ -z "$destdir" ]; then
+	destdir="source-tarballs"
+fi
+
+mkdir -p "$destdir"
+if [ ! -d "$destdir" ]; then
+	echo "[ERROR] Directory not found ($destdir)"
+	exit 1
+fi
+
+config_file="pre-download-config"
+script_dir=$(cd -- "$(dirname -- "$0")" &>/dev/null && pwd)
+
+if [ ! -f "$script_dir/$config_file" ]; then
+	echo "[ERROR] Configuration file not found ($script_dir/$config_file)"
+	exit 2
+fi
+
+while IFS= read -r line <&3
+do
+	line=${line%%#*}	# Remove comments
+	line=$(trim "$line")
+
+	if [ -n "$line" ]; then
+		url=$line
+		re="^(https?://.+/)(.+)-([^-]*)(\.tar\..+)$"
+		if [[ ! $url =~ $re ]]; then
+			echo "[ERROR] Invalid package URL (${url})"
+			exit 3
+		fi
+		path=${BASH_REMATCH[1]}
+		package=${BASH_REMATCH[2]}
+		version=${BASH_REMATCH[3]}
+		ext=${BASH_REMATCH[4]}
+		set -e
+		if [[ ! $version =~ ^[0-9.]+$ ]]; then
+			version=$(get_package_version "$package")
+		fi
+		filename="${package}-${version}${ext}"
+		url2="${path}${filename}"
+		wget -nv -T 120 --tries=20 -nc --progress=dot:binary -P "$destdir" "$url2"
+		CT_DoVerifyDigest "${destdir}/${filename}" "${package}/${version}"
+		set +e
+	fi
+done 3<"$script_dir/$config_file"
+
+exit 0
