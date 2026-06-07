@@ -21,23 +21,14 @@ These [ready-to-use](https://github.com/Matrix3600/mingw-cross/releases) toolcha
 Download the tarball from the [release page](https://github.com/Matrix3600/mingw-cross/releases).
 Choose the one that corresponds to the `host` system on which the toolchain will run, and the `target` for which you want to generate executables (from the list above).
 
-The tarball names are `<host>_<target>.tar.xz` for Linux,
-or `<host>_<target>.7z` for Windows.
+The tarball names are `<host>_<target>.tar.xz` for Linux.
 
-On Linux, extract the tarball to `/opt/x-tools`:
+Extract the tarball to `/opt/x-tools`:
 ```
 sudo mkdir -p /opt/x-tools
 sudo tar -xf <host>_<target>.tar.xz -C /opt/x-tools
 
 export PATH="/opt/x-tools/<target>/bin:$PATH"
-<target>-gcc hello.c -o hello
-```
-
-On Windows, extract it to `C:\x-tools`:
-```
-mkdir C:\x-tools
-tar -xf <host>_<target>.7z -C C:\x-tools
-PATH=C:\x-tools\<target>\bin;%PATH%
 <target>-gcc hello.c -o hello
 ```
 
