@@ -81,6 +81,12 @@ function build_target()
 
 	/opt/crosstool-ng/bin/ct-ng build
 
+	find "mingw-cross" -maxdepth 2 -exec chmod +w {} \;
+	rm -f "mingw-cross/build.log.bz2"
+	rm -f "mingw-cross/toolchain.cmake"
+	rm -f "mingw-cross/share/${TARGET}-ct-ng.config.bz2"
+	find "mingw-cross" -maxdepth 2 -exec chmod a-w {} \;
+
 	# Tarball
 	sudo rm -rf ${TARGET}
 	mv mingw-cross ${TARGET}

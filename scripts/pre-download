@@ -106,7 +106,7 @@ do
 		version=${BASH_REMATCH[3]}
 		ext=${BASH_REMATCH[4]}
 		set -e
-		if [[ ! $version =~ ^[0-9.]+$ ]]; then
+		if [[ ! $version =~ ^v?[0-9.]+$ ]]; then
 			version=$(get_package_version "$package")
 		fi
 		filename="${package}-${version}${ext}"

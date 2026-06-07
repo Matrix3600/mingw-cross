@@ -6,5 +6,4 @@
 # If <version> if empty or non-numeric, the latest version of the package
 # supported by crosstool-NG is used.
 #
-https://ftp.gnu.org/gnu/gettext/gettext-x.tar.xz
 https://ftp.gnu.org/gnu/gmp/gmp-x.tar.xz
