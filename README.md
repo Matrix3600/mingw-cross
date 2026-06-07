@@ -6,14 +6,15 @@ toolchain with the GCC compiler and the MinGW-w64 library.
 These [ready-to-use](https://github.com/Matrix3600/mingw-cross/releases) toolchains run on:
 
 - Linux x86-64
+- Linux ARM64
 
 ## Supported targets
 
-| Target                         | GCC    | Binutils | MinGW-w64 |
-|--------------------------------|:------:|:--------:|:---------:|
-| aarch64-w64-mingw32            | 16.1.0 | 2.46     | 14.0.0    |
-| i686-w64-mingw32               | 16.1.0 | 2.46     | 14.0.0    |
-| x86_64-w64-mingw32             | 16.1.0 | 2.46     | 14.0.0    |
+| Target                                  | GCC    | Binutils | MinGW-w64 |
+|-----------------------------------------|:------:|:--------:|:---------:|
+| aarch64-w64-mingw32 (armv8.1 or higher) | 16.1.0 | 2.46     | 14.0.0    |
+| i686-w64-mingw32                        | 16.1.0 | 2.46     | 14.0.0    |
+| x86_64-w64-mingw32                      | 16.1.0 | 2.46     | 14.0.0    |
 
 ## How to use
 
@@ -52,6 +53,7 @@ This builds the files and creates a draft release.
 
 The host architecture (on which the toolchains run) depends on the beginning of the tag name:
 - "x64-" for Linux x86-64
+- "arm64-" for Linux ARM64
 
 Otherwise you can also publish a release directly.
 
