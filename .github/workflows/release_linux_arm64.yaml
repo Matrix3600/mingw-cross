@@ -15,7 +15,7 @@ env:
 jobs:
   pre-download:
     name: Pre-download
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-26.04-arm
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -33,10 +33,30 @@ jobs:
           path: ${{ env.CTNG_SOURCE_DIR }}
           retention-days: 1
 
+  build-crosstool-ng:
+    name: Build crosstool-NG
+    runs-on: ubuntu-26.04-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          submodules: true
+      - name: Build
+        run: |
+          ./scripts/make crosstool-ng
+      - name: Upload package
+        uses: actions/upload-artifact@v7
+        with:
+          name: crosstool-ng
+          path: "crosstool-ng.tar.xz"
+          if-no-files-found: error
+          retention-days: 1
+
   build:
     name: Build
-    runs-on: ubuntu-24.04-arm
-    needs: [pre-download]
+    runs-on: ubuntu-26.04-arm
+    needs: [pre-download, build-crosstool-ng]
     strategy:
       fail-fast: true
       matrix:
@@ -56,6 +76,10 @@ jobs:
           name: source-tarballs
           path: ${{ env.CTNG_SOURCE_DIR }}
           merge-multiple: true
+      - name: Download crosstool-NG
+        uses: actions/download-artifact@v8
+        with:
+          name: crosstool-ng
       - name: Build
         run: |
           ls -l "$CTNG_SOURCE_DIR"
@@ -70,7 +94,7 @@ jobs:
 
   release:
     name: Release
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-26.04-arm
     permissions:
       contents: write
     needs: [build]

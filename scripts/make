@@ -50,9 +50,44 @@ function install_packages()
 		unzip \
 		wget \
 		xz-utils \
-		"
+	"
 	sudo apt-get update
 	sudo apt-get install -y --no-install-recommends $packages
+}
+
+
+function build_crosstool_ng()
+{
+	sudo rm -rf crosstool-ng
+	mkdir crosstool-ng
+	local install_dir="$(pwd)/crosstool-ng"
+
+	pushd builder
+
+	# Patch
+	git clean -fdx
+	git reset --hard HEAD
+
+	find "../patches/patch" -type f -name "*.patch" -print0 | sort -z | \
+		while IFS= read -r -d '' file; do
+			echo "*** ${file#../patches/patch/}"
+			patch -Np1 -i "$file"
+		done
+	if [ -d "../patches/add" ]; then
+		cp -rpv "../patches/add/." "packages/"
+	fi
+
+	./bootstrap
+	./configure --prefix="${install_dir}"
+	make -j$(nproc)
+	make install
+	popd
+	sudo chown -R root:0 crosstool-ng
+
+	local name="crosstool-ng.tar.xz"
+	echo -e "\nCreating \"${name}\" ...\n"
+	tar -cJvf "$name" crosstool-ng
+	sudo rm -rf crosstool-ng
 }
 
 
@@ -60,26 +95,43 @@ function build_target()
 {
 	local TARGET="$1"
 
+	local src_dir="$CTNG_SOURCE_DIR"
+	if [ -z "$src_dir" ]; then
+		src_dir="source-tarballs"
+	fi
+	set +e
+	local source_dir="$(mkdir -p -- "$src_dir" &>/dev/null && \
+		cd -- "$src_dir" &>/dev/null && pwd)"
+	set -e
+	if [ -z "$source_dir" ]; then
+		echo "[ERROR] Source directory invalid (${src_dir})."
+		return 1
+	fi
+
+	sudo rm -rf crosstool-ng
+	tar -xf "crosstool-ng.tar.xz"
+
 	sudo rm -rf build
 	mkdir build
 	pushd build
+
 	cp "../targets/${TARGET}/config" .config
 	cat <<- EOF >> .config
 		CT_CONFIG_VERSION="4"
 		CT_EXPERIMENTAL=y
-		CT_LOCAL_TARBALLS_DIR="../source-tarballs"
+		CT_LOCAL_TARBALLS_DIR="${source_dir}"
 		CT_PREFIX_DIR="mingw-cross"
 		CT_CONNECT_TIMEOUT=120
 		CT_DOWNLOAD_WGET_OPTIONS="--tries=20 -nc --progress=dot:binary"
 		# CT_LOG_PROGRESS_BAR is not set
 		# CT_SHOW_CT_VERSION is not set
 	EOF
-	/opt/crosstool-ng/bin/ct-ng olddefconfig
+	../crosstool-ng/bin/ct-ng olddefconfig
 	echo -e "\n*** CT config ***\n"
 	cat .config
 	echo -e "\n******\n"
 
-	/opt/crosstool-ng/bin/ct-ng build
+	../crosstool-ng/bin/ct-ng build
 
 	find "mingw-cross" -maxdepth 2 -exec chmod +w {} \;
 	rm -f "mingw-cross/build.log.bz2"
@@ -101,6 +153,10 @@ function build_target()
 	printf '%s *%s\n' "$hash" "$name" > "../${name}.sha256"
 	popd
 	sudo rm -rf build
+	sudo rm -rf crosstool-ng
+
+	echo -e "\nThe complete toolchain is in"
+	echo -e "${name} .\n"
 }
 
 
@@ -111,37 +167,19 @@ if [ -z "$TARGET" ]; then
 	exit 1
 fi
 
-if [ ! -f "targets/${TARGET}/config" ]; then
+if [[ $TARGET != "crosstool-ng" && ! -f "targets/${TARGET}/config" ]]; then
 	echo "[ERROR] Target not supported (${TARGET})."
 	exit 1
 fi
 
 install_packages
 
-# Patch
-pushd builder
-git reset --hard HEAD
-git clean -fdx
-for i in ../targets/${TARGET}/*; do
-	if [[ $i == *.patch ]]; then
-		patch -Np1 -i $i
-	fi
-done
-if [ -d "../patches" ]; then
-	cp -rpv "../patches/." "packages/"
+if [ ! -f "crosstool-ng.tar.xz" ]; then
+	build_crosstool_ng
 fi
-popd
 
-# crosstool-NG
-sudo mkdir -p /opt
-sudo rm -rf /opt/crosstool-ng
-pushd builder
-./bootstrap
-./configure --prefix=/opt/crosstool-ng
-make -j`nproc`
-sudo make install
-popd
-
-build_target "$TARGET"
+if [ "$TARGET" != "crosstool-ng" ]; then
+	build_target "$TARGET"
+fi
 
 echo -e "\nDone.\n"
