@@ -67,16 +67,12 @@ function build_crosstool_ng()
 	# Patch
 	git clean -fdx
 	git reset --hard HEAD
-
-	if [ -d "../patches/patch" ]; then
-		find "../patches/patch" -type f -name "*.patch" -print0 | sort -z | \
+	if [ -d "../patches" ]; then
+		find "../patches" -type f -name "*.patch" -print0 | sort -z | \
 			while IFS= read -r -d '' file; do
-				echo "*** ${file#../patches/patch/}"
+				echo "*** ${file#../patches/}"
 				patch -Np1 -i "$file"
 			done
-	fi
-	if [ -d "../patches/add" ]; then
-		cp -rpv "../patches/add/." "packages/"
 	fi
 
 	./bootstrap
