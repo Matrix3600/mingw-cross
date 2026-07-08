@@ -24,7 +24,7 @@ jobs:
           submodules: true
       - name: Download tarballs
         run: |
-          ./scripts/pre-download
+          ./scripts/pre-download "$CTNG_SOURCE_DIR"
           ls -l "$CTNG_SOURCE_DIR"
       - name: Upload tarballs
         uses: actions/upload-artifact@v7

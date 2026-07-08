@@ -1,29 +1,11 @@
 #!/usr/bin/env bash
 
 # This script only runs on Linux.
-# It needs a case-sensitive file system (prerequisite for crosstool-ng).
+# It requires a case-sensitive file system (prerequisite for crosstool-ng).
 
 set -e -o pipefail
 
-
-function get_build_machine_type()
-{
-	local system="linux"
-	case $(uname -s) in
-		Linux) ;;
-		*) echo "uname -s: \"$(uname -s)\"" >&2 ;;
-	esac
-	local arch=""
-	case $(uname -m) in
-		i?86) arch="x86" ;;
-		x86_64|amd64) arch="x64" ;;
-		aarch64*|arm64|armv8*) arch="arm64" ;;
-		*) echo "uname -m: \"$(uname -m)\"" >&2 ;;
-	esac
-	if [ -n "$arch" ]; then printf '%s\n' "${system}-${arch}"
-	else printf '%s\n' "$system"
-	fi
-}
+. "$(dirname "$0")/tools/common.sh"
 
 
 function install_packages()
@@ -56,39 +38,6 @@ function install_packages()
 }
 
 
-function build_crosstool_ng()
-{
-	sudo rm -rf crosstool-ng
-	mkdir crosstool-ng
-	local install_dir="$(pwd)/crosstool-ng"
-
-	pushd builder
-
-	# Patch
-	git clean -fdx
-	git reset --hard HEAD
-	if [ -d "../patches" ]; then
-		find "../patches" -type f -name "*.patch" -print0 | sort -z | \
-			while IFS= read -r -d '' file; do
-				echo "*** ${file#../patches/}"
-				patch -Np1 -i "$file"
-			done
-	fi
-
-	./bootstrap
-	./configure --prefix="${install_dir}"
-	make -j$(nproc)
-	make install
-	popd
-	sudo chown -R root:0 crosstool-ng
-
-	local name="crosstool-ng.tar.xz"
-	echo -e "\nCreating \"${name}\" ...\n"
-	tar -cJvf "$name" crosstool-ng
-	sudo rm -rf crosstool-ng
-}
-
-
 function build_target()
 {
 	local TARGET="$1"
@@ -102,7 +51,7 @@ function build_target()
 		cd -- "$src_dir" &>/dev/null && pwd)"
 	set -e
 	if [ -z "$source_dir" ]; then
-		echo "[ERROR] Source directory invalid (${src_dir})."
+		echo "[ERROR] Source directory invalid (${src_dir})." >&2
 		return 1
 	fi
 
@@ -131,6 +80,8 @@ function build_target()
 
 	../crosstool-ng/bin/ct-ng build
 
+	show_progress_message "Finalizing toolchain"
+
 	find "mingw-cross" -maxdepth 2 -exec chmod +w {} \;
 	rm -f "mingw-cross/build.log.bz2"
 	rm -f "mingw-cross/toolchain.cmake"
@@ -142,12 +93,15 @@ function build_target()
 	mv mingw-cross ${TARGET}
 	sudo chown -R root:0 ${TARGET}
 
-	local host_name="$(get_build_machine_type)"
+	local host_type
+	host_type="$(get_build_machine_type)"
+	local name="${host_type}_${TARGET}.tar.xz"
 
-	local name="${host_name}_${TARGET}.tar.xz"
-	echo -e "\nCreating \"${name}\" ...\n"
+	show_progress_message "Creating \"${name}\""
+
 	tar -cJvf "../${name}" "${TARGET}"
-	local hash="$(sha256sum "../${name}" | awk '{ print $1 }')"
+	local hash
+	hash="$(sha256sum "../${name}" | awk '{ print $1 }')"
 	printf '%s *%s\n' "$hash" "$name" > "../${name}.sha256"
 	popd
 	sudo rm -rf build
@@ -161,12 +115,12 @@ function build_target()
 TARGET=$1
 
 if [ -z "$TARGET" ]; then
-	echo "[ERROR] Target is missing."
+	echo "[ERROR] Target is missing." >&2
 	exit 1
 fi
 
 if [[ $TARGET != "crosstool-ng" && ! -f "targets/${TARGET}/config" ]]; then
-	echo "[ERROR] Target not supported (${TARGET})."
+	echo "[ERROR] Target not supported (${TARGET})." >&2
 	exit 1
 fi
 

@@ -50,7 +50,8 @@ get_package_version() {
 	local pkgdir="${PACKAGES_DIR}/$1"
 	if [ ! -d "$pkgdir" ]; then return 1; fi
 
-	local version="$({ cd "$pkgdir" && ls -dv -- */ | tail -n 1; } \
+	local version
+	version="$({ cd "$pkgdir" && ls -dv -- */ | tail -n 1; } \
 		2>/dev/null)"
 	version=${version%/}
 	if [ -z "$version" ]; then return 2; fi
