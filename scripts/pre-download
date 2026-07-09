@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 
+set -e -o pipefail
+
+. "$(dirname "$0")/tools/common.sh"
+
+
 PACKAGES_DIR="builder/packages"
 CT_VERIFY_DOWNLOAD_DIGEST_ALG="sha512"
 
@@ -8,7 +13,7 @@ CT_VERIFY_DOWNLOAD_DIGEST_ALG="sha512"
 #
 # CT_DoVerifyDigest <local-file-path> <package-directory>
 #
-CT_DoVerifyDigest()
+function CT_DoVerifyDigest()
 {
 	local path="$1"
 	local file="${path##*/}"
@@ -32,7 +37,7 @@ CT_DoVerifyDigest()
 			# echo "[DEBUG] Correct ${alg} digest for ${file}: ${chksum}"
 			return 0
 		else
-			echo "[ERROR] Bad ${alg} digest for ${file}: ${chksum}, expect ${c}"
+			echo "[ERROR] Bad ${alg} digest for ${file}: ${chksum}, expect ${c}" >&2
 			return 1
 		fi
 	done < "${pkgdir}/chksum"
@@ -46,7 +51,7 @@ CT_DoVerifyDigest()
 #
 # get_package_version <package-name>
 #
-get_package_version() {
+function get_package_version() {
 	local pkgdir="${PACKAGES_DIR}/$1"
 	if [ ! -d "$pkgdir" ]; then return 1; fi
 
@@ -61,7 +66,7 @@ get_package_version() {
 }
 
 
-trim() {
+function trim() {
 	local var="$1"
 	# Remove leading whitespace characters
 	var="${var#"${var%%[![:space:]]*}"}"
@@ -71,22 +76,32 @@ trim() {
 }
 
 
-destdir=$1
-if [ -z "$destdir" ]; then
-	destdir="source-tarballs"
+function install_packages()
+{
+	local packages="wget"
+	sudo apt-get update
+	sudo apt-get install -y --no-install-recommends $packages
+}
+
+
+DEST_DIR=$1
+if [ -z "$DEST_DIR" ]; then
+	DEST_DIR="source-tarballs"
 fi
 
-mkdir -p "$destdir"
-if [ ! -d "$destdir" ]; then
-	echo "[ERROR] Directory not found ($destdir)"
+mkdir -p "$DEST_DIR"
+if [ ! -d "$DEST_DIR" ]; then
+	echo "[ERROR] Directory not found ($DEST_DIR)" >&2
 	exit 1
 fi
+
+install_packages
 
 config_file="pre-download-config"
 script_dir=$(cd -- "$(dirname -- "$0")" &>/dev/null && pwd)
 
 if [ ! -f "$script_dir/$config_file" ]; then
-	echo "[ERROR] Configuration file not found ($script_dir/$config_file)"
+	echo "[ERROR] Configuration file not found ($script_dir/$config_file)" >&2
 	exit 2
 fi
 
@@ -99,22 +114,20 @@ do
 		url=$line
 		re="^(https?://.+/)(.+)-([^-]*)(\.tar\..+)$"
 		if [[ ! $url =~ $re ]]; then
-			echo "[ERROR] Invalid package URL (${url})"
+			echo "[ERROR] Invalid package URL (${url})" >&2
 			exit 3
 		fi
 		path=${BASH_REMATCH[1]}
 		package=${BASH_REMATCH[2]}
 		version=${BASH_REMATCH[3]}
 		ext=${BASH_REMATCH[4]}
-		set -e
 		if [[ ! $version =~ ^v?[0-9.]+$ ]]; then
 			version=$(get_package_version "$package")
 		fi
 		filename="${package}-${version}${ext}"
 		url2="${path}${filename}"
-		wget -nv -T 120 --tries=20 -nc --progress=dot:binary -P "$destdir" "$url2"
-		CT_DoVerifyDigest "${destdir}/${filename}" "${package}/${version}"
-		set +e
+		wget -nv -T 120 --tries=20 -nc --progress=dot:binary -P "$DEST_DIR" "$url2"
+		CT_DoVerifyDigest "${DEST_DIR}/${filename}" "${package}/${version}"
 	fi
 done 3<"$script_dir/$config_file"
 
