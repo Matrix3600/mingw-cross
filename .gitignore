@@ -1,0 +1,4 @@
+/build/
+/source-tarballs/
+*.7z*
+*.tar.*
