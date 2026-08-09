@@ -12,9 +12,9 @@ These [ready-to-use](https://github.com/Matrix3600/mingw-cross/releases) toolcha
 
 | Target                                  | GCC    | Binutils | MinGW-w64 |
 |-----------------------------------------|:------:|:--------:|:---------:|
-| aarch64-w64-mingw32 (armv8.1 or higher) | 16.1.0 | 2.47     | 14.0.0    |
-| i686-w64-mingw32                        | 16.1.0 | 2.47     | 14.0.0    |
-| x86_64-w64-mingw32                      | 16.1.0 | 2.47     | 14.0.0    |
+| aarch64-w64-mingw32 (armv8.1 or higher) | 16.2.0 | 2.47     | 14.0.0    |
+| i686-w64-mingw32                        | 16.2.0 | 2.47     | 14.0.0    |
+| x86_64-w64-mingw32                      | 16.2.0 | 2.47     | 14.0.0    |
 
 ## How to use
 
