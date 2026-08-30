@@ -1,9 +1,9 @@
 #
 # List of pre-downloaded packages.
 #
-# http(s)://<path>/<package>-<version>.tar.*
+# <package>-<version>.tar.* | <url> ...
 #
 # If <version> if empty or non-numeric, the latest version of the package
 # supported by crosstool-NG is used.
 #
-https://ftp.gnu.org/gnu/gmp/gmp-x.tar.xz
+gmp-x.tar.xz | https://ftp.gnu.org/gnu/gmp

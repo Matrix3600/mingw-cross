@@ -111,23 +111,36 @@ do
 	line=$(trim "$line")
 
 	if [ -n "$line" ]; then
-		url=$line
-		re="^(https?://.+/)(.+)-([^-]*)(\.tar\..+)$"
-		if [[ ! $url =~ $re ]]; then
-			echo "[ERROR] Invalid package URL (${url})" >&2
+		IFS="|" read -r package_name mirrors <<< "$line"
+		package_name=$(trim "$package_name")
+
+		re="^(.+)-([^-]*)(\.tar\..+)$"
+		if [[ ! $package_name =~ $re ]]; then
+			echo "[ERROR] Invalid package name (${package_name})" >&2
 			exit 3
 		fi
-		path=${BASH_REMATCH[1]}
-		package=${BASH_REMATCH[2]}
-		version=${BASH_REMATCH[3]}
-		ext=${BASH_REMATCH[4]}
-		if [[ ! $version =~ ^v?[0-9.]+$ ]]; then
+		package=${BASH_REMATCH[1]}
+		version=${BASH_REMATCH[2]}
+		ext=${BASH_REMATCH[3]}
+		if [[ ! $version =~ ^[0-9.]+$ ]]; then
 			version=$(get_package_version "$package")
 		fi
 		filename="${package}-${version}${ext}"
-		url2="${path}${filename}"
-		wget -nv -T 120 --tries=20 -nc --progress=dot:binary -P "$DEST_DIR" "$url2"
-		CT_DoVerifyDigest "${DEST_DIR}/${filename}" "${package}/${version}"
+
+		success=false
+		for mirror in $mirrors; do
+			echo "From ${mirror}"
+			url="${mirror%/}/${filename}"
+			if wget -nv -T 120 --tries=20 -nc --progress=dot:binary -P "$DEST_DIR" "$url" && \
+					CT_DoVerifyDigest "${DEST_DIR}/${filename}" "${package}/${version}" ; then
+				success=true
+				break
+			fi
+		done
+		if ! $success; then
+			echo "[ERROR] Unable to download ${filename}" >&2
+			exit 4
+		fi
 	fi
 done 3<"$script_dir/$config_file"
 
