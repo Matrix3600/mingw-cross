@@ -78,7 +78,7 @@ function trim() {
 
 function install_packages()
 {
-	local packages="wget"
+	local packages="git patch wget"
 	sudo apt-get update
 	sudo apt-get install -y --no-install-recommends $packages
 }
@@ -96,6 +96,21 @@ if [ ! -d "$DEST_DIR" ]; then
 fi
 
 install_packages
+
+pushd builder
+
+# Patch crosstool-NG
+git clean -fdx
+git reset --hard HEAD
+if [ -d "../patches" ]; then
+	find "../patches" -type f -name "*.patch" -print0 | sort -z | \
+		while IFS= read -r -d '' file; do
+			echo "*** ${file#../patches/}"
+			patch -Np1 -i "$file"
+		done
+fi
+
+popd
 
 config_file="pre-download-config"
 script_dir=$(cd -- "$(dirname -- "$0")" &>/dev/null && pwd)
