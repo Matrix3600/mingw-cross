@@ -1,0 +1,223 @@
+#!/usr/bin/env bash
+
+# This script only runs on Linux x64 or ARM64.
+
+set -e -o pipefail
+
+. "$(dirname "$0")/tools/common.sh"
+
+
+function install_packages()
+{
+	local packages="\
+		autoconf \
+		automake \
+		bison \
+		bzip2 \
+		flex \
+		g++ \
+		gawk \
+		gcc \
+		git \
+		gperf \
+		help2man \
+		libncurses-dev \
+		libtool-bin \
+		make \
+		patch \
+		python3 \
+		rsync \
+		texinfo \
+		unzip \
+		wget \
+		xz-utils \
+	"
+	sudo apt-get update
+	sudo apt-get install -y --no-install-recommends $packages
+}
+
+
+function get_host_toolchain()
+{
+	local HOST="$1"
+
+	local build
+	build="$(get_build_machine_type)"
+	case $build in
+		linux-x64)
+			if [ "$HOST" == "x86_64-unknown-linux-gnu" ]; then
+				# Host=generic x86-64, build=x86-64 level > 1 (currently 3).
+				build="linux-x64v3"
+			fi
+			;;
+		linux-arm64) ;;
+		*)
+			echo "[ERROR] Build machine not supported (${build})." >&2
+			return 1
+			;;
+	esac
+	local arch="${build##*-}"
+	local name="${build}_${HOST}.tar.xz"
+	if [ ! -f "$name" ]; then
+		local url=""
+		case $HOST in
+			*-gnu)
+				url="${CROSS_GNU_URL}/gnu-cross/releases/download/${arch}-${CROSS_GNU_VER}/${name}"
+				;;
+			*-mingw32)
+				url="${CROSS_MINGW_URL}/mingw-cross/releases/download/${arch}-${CROSS_MINGW_VER}/${name}"
+				;;
+		esac
+		if ! wget -nv -nc -T 120 --tries=20 "$url"; then
+			echo "[ERROR] Host not supported (${HOST})." >&2
+			return 1
+		fi
+	fi
+}
+
+
+function build_target()
+{
+	local HOST="$1"
+	local TARGET="$2"
+
+	local src_dir="$CTNG_SOURCE_DIR"
+	if [ -z "$src_dir" ]; then
+		src_dir="source-tarballs"
+	fi
+	set +e
+	local source_dir="$(mkdir -p -- "$src_dir" &>/dev/null && \
+		cd -- "$src_dir" &>/dev/null && pwd)"
+	set -e
+	if [ -z "$source_dir" ]; then
+		echo "[ERROR] Source directory invalid (${src_dir})." >&2
+		return 1
+	fi
+
+	sudo rm -rf crosstool-ng
+	tar -xf "crosstool-ng.tar.xz"
+
+	sudo rm -rf build
+	mkdir build
+	pushd build
+
+	cp "../targets/${TARGET}/config" .config
+	cat <<- EOF >> .config
+		CT_CONFIG_VERSION="4"
+		CT_EXPERIMENTAL=y
+		CT_LOCAL_TARBALLS_DIR="${source_dir}"
+		CT_PREFIX_DIR="mingw-cross"
+		CT_CONNECT_TIMEOUT=120
+		CT_DOWNLOAD_WGET_OPTIONS="--tries=20 -nc --progress=dot:binary"
+		# CT_LOG_PROGRESS_BAR is not set
+		# CT_SHOW_CT_VERSION is not set
+		# CT_CROSS is not set
+		CT_CANADIAN=y
+		CT_TOOLCHAIN_TYPE="canadian"
+		CT_HOST="${HOST}"
+		CT_HOST_PREFIX=""
+		CT_HOST_SUFFIX=""
+		# CT_LINKER_MOLD is not set
+	EOF
+	../crosstool-ng/bin/ct-ng olddefconfig
+	echo -e "\n*** CT config ***\n"
+	cat .config
+	echo -e "\n******\n"
+
+	# Install the host toolchain
+	local build
+	build="$(get_build_machine_type)"
+	tar -xf "../${build}_${HOST}.tar.xz"
+
+	(
+		export PATH="$(pwd)/${HOST}/bin:$PATH"
+		../crosstool-ng/bin/ct-ng build
+	)
+
+	show_progress_message "Finalizing toolchain"
+
+	local host_type
+	host_type="$(get_host_type "$HOST")"
+
+	if [ "$host_type" != "$build" ]; then
+		# Dynamic library for host
+		find "mingw-cross" -maxdepth 2 -exec chmod +w {} \;
+		mkdir -p "mingw-cross/lib"
+		local host_lib="${HOST}/${HOST}/sysroot/lib"
+		for f in "${host_lib}"/ld-*.so.* ; do
+			if [ -f "$f" ]; then
+				echo "Copying \"$f\" to \"mingw-cross/lib/\""
+				cp "$f" "mingw-cross/lib/"
+			fi
+		done
+		rm -f "mingw-cross/build.log.bz2"
+		rm -f "mingw-cross/toolchain.cmake"
+		rm -f "mingw-cross/share/${TARGET}-ct-ng.config.bz2"
+		find "mingw-cross" -maxdepth 2 -exec chmod a-w {} \;
+	fi
+
+	# Tarball
+	sudo rm -rf ${TARGET}
+	mv mingw-cross ${TARGET}
+	sudo chown -R root:0 ${TARGET}
+
+	local name="${host_type}_${TARGET}.tar.xz"
+
+	show_progress_message "Creating \"${name}\""
+
+	tar -cJvf "../${name}" "${TARGET}"
+	local hash
+	hash="$(sha256sum "../${name}" | awk '{ print $1 }')"
+	printf '%s *%s\n' "$hash" "$name" > "../${name}.sha256"
+	popd
+	sudo rm -rf build
+	sudo rm -rf crosstool-ng
+
+	echo -e "\nThe complete toolchain is in"
+	echo -e "${name} .\n"
+}
+
+
+if [ "$#" -eq 1 ]; then
+	HOST=""
+	TARGET=$1
+else
+	HOST=$1
+	TARGET=$2
+fi
+
+if [[ -z $HOST && $TARGET != "crosstool-ng" ]]; then
+	echo "[ERROR] Host is missing." >&2
+	exit 1
+fi
+
+if [ -z "$TARGET" ]; then
+	echo "[ERROR] Target is missing." >&2
+	exit 1
+fi
+
+if [[ $TARGET != "crosstool-ng" && ! -f "targets/${TARGET}/config" ]]; then
+	echo "[ERROR] Target not supported (${TARGET})." >&2
+	exit 1
+fi
+
+if [ "$HOST" == "$TARGET" ]; then
+	echo "[ERROR] Target and host are identical." >&2
+	exit 1
+fi
+
+install_packages
+
+if [ "$TARGET" != "crosstool-ng" ]; then
+	get_host_toolchain "$HOST"
+fi
+
+if [ ! -f "crosstool-ng.tar.xz" ]; then
+	build_crosstool_ng
+fi
+
+if [ "$TARGET" != "crosstool-ng" ]; then
+	build_target "$HOST" "$TARGET"
+fi
+
+echo -e "\nDone.\n"

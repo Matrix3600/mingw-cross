@@ -95,6 +95,13 @@ function build_target()
 
 	local host_type
 	host_type="$(get_build_machine_type)"
+	if [ "$host_type" == "linux-x64" ]; then
+		local gcc_arch
+		gcc_arch=$(gcc -Q --help=target | grep "^[[:space:]]*-march" | awk '{print $2}')
+		if [[ $gcc_arch =~ ^x86-64-v([1-9][0-9]*)$ ]]; then
+			host_type="linux-x64v${BASH_REMATCH[1]}"
+		fi
+	fi
 	local name="${host_type}_${TARGET}.tar.xz"
 
 	show_progress_message "Creating \"${name}\""
