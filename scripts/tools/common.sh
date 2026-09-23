@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 
+CROSS_GNU_URL="https://github.com/Matrix3600"
+CROSS_GNU_VER="20260908"
+CROSS_MINGW_URL="https://github.com/Matrix3600"
+CROSS_MINGW_VER="20260810"
+
+
 function get_build_machine_type()
 {
 	if [ "$OS" == "Windows_NT" ]; then
