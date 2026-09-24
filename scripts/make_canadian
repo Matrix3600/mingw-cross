@@ -7,9 +7,64 @@ set -e -o pipefail
 . "$(dirname "$0")/tools/common.sh"
 
 
+#
+# Rename conflicting files on case-insensitive file systems.
+#
+
+#
+# Rename conflicting filenames in include directives.
+#
+function rename_includes()
+{
+	if [ -n "$2" ]; then
+		local pattern=""
+		for name in $2; do
+			pattern="${pattern}${pattern:+\\|}${name}"
+		done
+		find "$1" -type f -print0 | while IFS= read -r -d '' file; do
+			sed -i -b -e "s@\(#include\s*<linux/\(${pattern}\)\)\(\.h>\)@\1_1\3@g" "$file"
+			if [ $? != 0 ]; then return 1; fi
+		done
+	fi
+}
+
+#
+# Rename conflicting files.
+#
+function rename_files_windows()
+{
+	local rename_file_list="\
+		netfilter/xt_connmark \
+		netfilter/xt_dscp \
+		netfilter/xt_mark \
+		netfilter/xt_rateest \
+		netfilter/xt_tcpmss \
+		netfilter_ipv4/ipt_ecn \
+		netfilter_ipv4/ipt_ttl \
+		netfilter_ipv6/ip6t_hl"
+
+	local renamed_files=""
+	local root_dir="${1}/sysroot/usr/include/linux"
+	find "$root_dir" -exec chmod +w {} \;
+	for name in $rename_file_list ;	do
+		local ext=".h"
+		if [ -f "${root_dir}/${name}${ext}" ]; then
+			echo "Renaming \"${root_dir}/${name}${ext}\" to \"${name}_1${ext}\""
+			mv "${root_dir}/${name}${ext}" "${root_dir}/${name}_1${ext}"
+			if [ $? != 0 ]; then return 1; fi
+			renamed_files="${renamed_files} ${name}"
+		fi
+	done
+	rename_includes "$root_dir" "${renamed_files}"
+	if [ $? != 0 ]; then return 1; fi
+	find "$root_dir" -exec chmod a-w {} \;
+}
+
+
 function install_packages()
 {
 	local packages="\
+		7zip \
 		autoconf \
 		automake \
 		bison \
@@ -136,24 +191,36 @@ function build_target()
 
 	show_progress_message "Finalizing toolchain"
 
+	# Dynamic library for host
+	find "mingw-cross" -maxdepth 2 -exec chmod +w {} \;
+	mkdir -p "mingw-cross/lib"
+	local host_lib="${HOST}/${HOST}/sysroot/lib"
+	for f in "${host_lib}"/ld-*.so.* ; do
+		local f_name
+		f_name="$(basename "$f")"
+		if [[ -f $f && $f_name != "ld-linux-x86-64.so.2" ]]; then
+			echo "Copying \"$f\" to \"mingw-cross/lib/\""
+			cp "$f" "mingw-cross/lib/"
+		fi
+	done
+	mkdir -p "mingw-cross/bin"
+	local host_lib2="${HOST}/${HOST}/sysroot/usr/${HOST}/bin"
+	for f in "${host_lib2}"/libwinpthread-*.dll ; do
+		if [ -f "$f" ]; then
+			echo "Copying \"$f\" to \"mingw-cross/bin/\""
+			cp "$f" "mingw-cross/bin/"
+		fi
+	done
+	rm -f "mingw-cross/build.log.bz2"
+	rm -f "mingw-cross/toolchain.cmake"
+	rm -f "mingw-cross/share/${TARGET}-ct-ng.config.bz2"
+	find "mingw-cross" -maxdepth 2 -exec chmod a-w {} \;
+
 	local host_type
 	host_type="$(get_host_type "$HOST")"
 
-	if [ "$host_type" != "$build" ]; then
-		# Dynamic library for host
-		find "mingw-cross" -maxdepth 2 -exec chmod +w {} \;
-		mkdir -p "mingw-cross/lib"
-		local host_lib="${HOST}/${HOST}/sysroot/lib"
-		for f in "${host_lib}"/ld-*.so.* ; do
-			if [ -f "$f" ]; then
-				echo "Copying \"$f\" to \"mingw-cross/lib/\""
-				cp "$f" "mingw-cross/lib/"
-			fi
-		done
-		rm -f "mingw-cross/build.log.bz2"
-		rm -f "mingw-cross/toolchain.cmake"
-		rm -f "mingw-cross/share/${TARGET}-ct-ng.config.bz2"
-		find "mingw-cross" -maxdepth 2 -exec chmod a-w {} \;
+	if [[ $host_type =~ win-* ]]; then
+		rename_files_windows "mingw-cross/${TARGET}"
 	fi
 
 	# Tarball
@@ -161,11 +228,19 @@ function build_target()
 	mv mingw-cross ${TARGET}
 	sudo chown -R root:0 ${TARGET}
 
-	local name="${host_type}_${TARGET}.tar.xz"
+	if [[ $host_type =~ win-* ]]; then
+		local name="${host_type}_${TARGET}.7z"
 
-	show_progress_message "Creating \"${name}\""
+		show_progress_message "Creating \"${name}\""
 
-	tar -cJvf "../${name}" "${TARGET}"
+		7z a -mx9 "../${name}" "${TARGET}"
+	else
+		local name="${host_type}_${TARGET}.tar.xz"
+
+		show_progress_message "Creating \"${name}\""
+
+		tar -cJvf "../${name}" "${TARGET}"
+	fi
 	local hash
 	hash="$(sha256sum "../${name}" | awk '{ print $1 }')"
 	printf '%s *%s\n' "$hash" "$name" > "../${name}.sha256"
