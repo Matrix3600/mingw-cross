@@ -6,4 +6,6 @@
 # If <version> if empty or non-numeric, the latest version of the package
 # supported by crosstool-NG is used.
 #
+gettext-x.tar.xz | https://ftp.gnu.org/gnu/gettext
 gmp-x.tar.xz | https://ftp.gnu.org/gnu/gmp
+ncurses-x.tar.gz | https://invisible-mirror.net/archives/ncurses https://ftp.gnu.org/gnu/ncurses
