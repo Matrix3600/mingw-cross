@@ -1,6 +1,6 @@
 name: Release Linux x64, built on Linux x86-64-v3
 
-# Requires a gnu-cross linux-x64v3 published release
+# Requires a gnu-cross linux-x64 or linux-x64v3 published release
 
 on:
   workflow_dispatch:
