@@ -92,6 +92,21 @@ function install_packages()
 }
 
 
+function get_host_toolchain_type()
+{
+	local HOST="$1"
+
+	local build_type
+	build_type="$(get_build_machine_type)"
+	if [[ $build_type == "linux-x64" && $HOST == "x86_64-unknown-linux-gnu" ]]; then
+			# Host=generic x86-64, build=x86-64 level > 1 (currently 3).
+			build_type="linux-x64v3"
+	fi
+
+	printf '%s\n' "$build_type"
+}
+
+
 function get_host_toolchain()
 {
 	local HOST="$1"
@@ -99,20 +114,15 @@ function get_host_toolchain()
 	local build
 	build="$(get_build_machine_type)"
 	case $build in
-		linux-x64)
-			if [ "$HOST" == "x86_64-unknown-linux-gnu" ]; then
-				# Host=generic x86-64, build=x86-64 level > 1 (currently 3).
-				build="linux-x64v3"
-			fi
-			;;
-		linux-arm64) ;;
+		linux-x64|linux-arm64) ;;
 		*)
 			echo "[ERROR] Build machine not supported (${build})." >&2
 			return 1
 			;;
 	esac
-	local arch="${build##*-}"
-	local name="${build}_${HOST}.tar.xz"
+	build_type="$(get_host_toolchain_type "$HOST")"
+	local arch="${build_type##*-}"
+	local name="${build_type}_${HOST}.tar.xz"
 	if [ ! -f "$name" ]; then
 		local url=""
 		case $HOST in
@@ -180,9 +190,9 @@ function build_target()
 	echo -e "\n******\n"
 
 	# Install the host toolchain
-	local build
-	build="$(get_build_machine_type)"
-	tar -xf "../${build}_${HOST}.tar.xz"
+	local build_type
+	build_type="$(get_host_toolchain_type "$HOST")"
+	tar -xf "../${build_type}_${HOST}.tar.xz"
 
 	(
 		export PATH="$(pwd)/${HOST}/bin:$PATH"
