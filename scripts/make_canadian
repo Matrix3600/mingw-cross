@@ -1,0 +1,328 @@
+#!/usr/bin/env bash
+
+# This script only runs on Linux x64 or ARM64.
+
+set -e -o pipefail
+
+. "$(dirname "$0")/tools/common.sh"
+
+
+#
+# Rename conflicting files on case-insensitive file systems.
+#
+
+#
+# Rename conflicting filenames in include directives.
+#
+function rename_includes()
+{
+	if [ -n "$2" ]; then
+		local pattern=""
+		for name in $2; do
+			pattern="${pattern}${pattern:+\\|}${name}"
+		done
+		find "$1" -type f -print0 | while IFS= read -r -d '' file; do
+			sed -i -b -e "s@\(#include\s*<linux/\(${pattern}\)\)\(\.h>\)@\1_1\3@g" "$file"
+			if [ $? != 0 ]; then return 1; fi
+		done
+	fi
+}
+
+#
+# Rename conflicting files.
+#
+function rename_files_windows()
+{
+	local rename_file_list="\
+		netfilter/xt_connmark \
+		netfilter/xt_dscp \
+		netfilter/xt_mark \
+		netfilter/xt_rateest \
+		netfilter/xt_tcpmss \
+		netfilter_ipv4/ipt_ecn \
+		netfilter_ipv4/ipt_ttl \
+		netfilter_ipv6/ip6t_hl"
+
+	local renamed_files=""
+	local root_dir="${1}/sysroot/usr/include/linux"
+	find "$root_dir" -exec chmod +w {} \;
+	for name in $rename_file_list ;	do
+		local ext=".h"
+		if [ -f "${root_dir}/${name}${ext}" ]; then
+			echo "Renaming \"${root_dir}/${name}${ext}\" to \"${name}_1${ext}\""
+			mv "${root_dir}/${name}${ext}" "${root_dir}/${name}_1${ext}"
+			if [ $? != 0 ]; then return 1; fi
+			renamed_files="${renamed_files} ${name}"
+		fi
+	done
+	rename_includes "$root_dir" "${renamed_files}"
+	if [ $? != 0 ]; then return 1; fi
+	find "$root_dir" -exec chmod a-w {} \;
+}
+
+
+function install_packages()
+{
+	local packages="\
+		7zip \
+		autoconf \
+		automake \
+		bison \
+		bzip2 \
+		flex \
+		g++ \
+		gawk \
+		gcc \
+		git \
+		gperf \
+		help2man \
+		libncurses-dev \
+		libtool-bin \
+		make \
+		patch \
+		python3 \
+		rsync \
+		texinfo \
+		unzip \
+		wget \
+		xz-utils \
+	"
+	sudo apt-get update
+	sudo apt-get install -y --no-install-recommends $packages
+}
+
+
+function get_host_toolchain()
+{
+	# Output: HOST_TOOLCHAIN_NAME
+
+	local HOST="$1"
+
+	local build
+	build="$(get_build_machine_type)"
+	case $build in
+		linux-x64|linux-arm64) ;;
+		*)
+			echo "[ERROR] Build machine not supported (${build})." >&2
+			return 1
+			;;
+	esac
+
+	local build_types="$build"
+	if [[ $build == "linux-x64" && $HOST == "x86_64-unknown-linux-gnu" ]]; then
+		# Host=generic x86-64, build=x86-64 level > 1.
+		local gcc_arch
+		gcc_arch=$(gcc -Q --help=target | grep "^[[:space:]]*-march" | awk '{print $2}')
+		if [[ $gcc_arch =~ ^x86-64-v([1-9][0-9]*)$ ]]; then
+			build_types="linux-x64v${BASH_REMATCH[1]} ${build}"
+		fi
+	fi
+
+	local toolchain_name=""
+	for build_type in $build_types; do
+		local name="${build_type}_${HOST}.tar.xz"
+		if [ -f "$name" ]; then
+			toolchain_name=$name
+			break
+		fi
+	done
+	if [ -z "$toolchain_name" ]; then
+		for build_type in $build_types; do
+			local arch="${build_type##*-}"
+			local name="${build_type}_${HOST}.tar.xz"
+			local url=""
+			case $HOST in
+				*-gnu)
+					url="${CROSS_GNU_URL}/gnu-cross/releases/download/${arch}-${CROSS_GNU_VER}/${name}"
+					;;
+				*-mingw32)
+					url="${CROSS_MINGW_URL}/mingw-cross/releases/download/${arch}-${CROSS_MINGW_VER}/${name}"
+					;;
+				*)
+					echo "[ERROR] Host not supported (${HOST})." >&2
+					return 1
+					;;
+			esac
+			if ! wget -nv -nc -T 120 --tries=20 "$url"; then
+				continue
+			fi
+			toolchain_name=$name
+			break
+		done
+	fi
+	if [ -z "$toolchain_name" ]; then
+		echo "[ERROR] Host not supported (${HOST})." >&2
+		return 1
+	fi
+
+	echo "Host toolchain: ${toolchain_name}"
+
+	HOST_TOOLCHAIN_NAME=$toolchain_name
+}
+
+
+function build_target()
+{
+	local HOST="$1"
+	local TARGET="$2"
+
+	local src_dir="$CTNG_SOURCE_DIR"
+	if [ -z "$src_dir" ]; then
+		src_dir="source-tarballs"
+	fi
+	set +e
+	local source_dir="$(mkdir -p -- "$src_dir" &>/dev/null && \
+		cd -- "$src_dir" &>/dev/null && pwd)"
+	set -e
+	if [ -z "$source_dir" ]; then
+		echo "[ERROR] Source directory invalid (${src_dir})." >&2
+		return 1
+	fi
+
+	sudo rm -rf crosstool-ng
+	tar -xf "crosstool-ng.tar.xz"
+
+	sudo rm -rf build
+	mkdir build
+	pushd build
+
+	cp "../targets/${TARGET}/config" .config
+	cat <<- EOF >> .config
+		CT_CONFIG_VERSION="4"
+		CT_EXPERIMENTAL=y
+		CT_LOCAL_TARBALLS_DIR="${source_dir}"
+		CT_PREFIX_DIR="mingw-cross"
+		CT_CONNECT_TIMEOUT=120
+		CT_DOWNLOAD_WGET_OPTIONS="--tries=20 -nc --progress=dot:binary"
+		# CT_LOG_PROGRESS_BAR is not set
+		# CT_SHOW_CT_VERSION is not set
+		# CT_CROSS is not set
+		CT_CANADIAN=y
+		CT_TOOLCHAIN_TYPE="canadian"
+		CT_HOST="${HOST}"
+		CT_HOST_PREFIX=""
+		CT_HOST_SUFFIX=""
+		# CT_LINKER_MOLD is not set
+	EOF
+	../crosstool-ng/bin/ct-ng olddefconfig
+	echo -e "\n*** CT config ***\n"
+	cat .config
+	echo -e "\n******\n"
+
+	# Install the host toolchain
+	tar -xf "../${HOST_TOOLCHAIN_NAME}"
+
+	(
+		export PATH="$(pwd)/${HOST}/bin:$PATH"
+		../crosstool-ng/bin/ct-ng build
+	)
+
+	show_progress_message "Finalizing toolchain"
+
+	# Dynamic library for host
+	find "mingw-cross" -maxdepth 2 -exec chmod +w {} \;
+	mkdir -p "mingw-cross/lib"
+	local host_lib="${HOST}/${HOST}/sysroot/lib"
+	for f in "${host_lib}"/ld-*.so.* ; do
+		local f_name
+		f_name="$(basename "$f")"
+		if [[ -f $f && $f_name != "ld-linux-x86-64.so.2" ]]; then
+			echo "Copying \"$f\" to \"mingw-cross/lib/\""
+			cp "$f" "mingw-cross/lib/"
+		fi
+	done
+	mkdir -p "mingw-cross/bin"
+	local host_lib2="${HOST}/${HOST}/sysroot/usr/${HOST}/bin"
+	for f in "${host_lib2}"/libwinpthread-*.dll ; do
+		if [ -f "$f" ]; then
+			echo "Copying \"$f\" to \"mingw-cross/bin/\""
+			cp "$f" "mingw-cross/bin/"
+		fi
+	done
+	rm -f "mingw-cross/build.log.bz2"
+	rm -f "mingw-cross/toolchain.cmake"
+	rm -f "mingw-cross/share/${TARGET}-ct-ng.config.bz2"
+	find "mingw-cross" -maxdepth 2 -exec chmod a-w {} \;
+
+	local host_type
+	host_type="$(get_host_type "$HOST")"
+
+	if [[ $host_type =~ win-* ]]; then
+		rename_files_windows "mingw-cross/${TARGET}"
+	fi
+
+	# Tarball
+	sudo rm -rf ${TARGET}
+	mv mingw-cross ${TARGET}
+	sudo chown -R root:0 ${TARGET}
+
+	if [[ $host_type =~ win-* ]]; then
+		local name="${host_type}_${TARGET}.7z"
+
+		show_progress_message "Creating \"${name}\""
+
+		7z a -mx9 "../${name}" "${TARGET}"
+	else
+		local name="${host_type}_${TARGET}.tar.xz"
+
+		show_progress_message "Creating \"${name}\""
+
+		tar -cJvf "../${name}" "${TARGET}"
+	fi
+	local hash
+	hash="$(sha256sum "../${name}" | awk '{ print $1 }')"
+	printf '%s *%s\n' "$hash" "$name" > "../${name}.sha256"
+	popd
+	sudo rm -rf build
+	sudo rm -rf crosstool-ng
+
+	echo -e "\nThe complete toolchain is in"
+	echo -e "${name} .\n"
+}
+
+
+if [ "$#" -eq 1 ]; then
+	HOST=""
+	TARGET=$1
+else
+	HOST=$1
+	TARGET=$2
+fi
+
+if [[ -z $HOST && $TARGET != "crosstool-ng" ]]; then
+	echo "[ERROR] Host is missing." >&2
+	exit 1
+fi
+
+if [ -z "$TARGET" ]; then
+	echo "[ERROR] Target is missing." >&2
+	exit 1
+fi
+
+if [[ $TARGET != "crosstool-ng" && ! -f "targets/${TARGET}/config" ]]; then
+	echo "[ERROR] Target not supported (${TARGET})." >&2
+	exit 1
+fi
+
+if [ "$HOST" == "$TARGET" ]; then
+	echo "[ERROR] Target and host are identical." >&2
+	exit 1
+fi
+
+HOST_TOOLCHAIN_NAME=""
+
+install_packages
+
+if [ "$TARGET" != "crosstool-ng" ]; then
+	get_host_toolchain "$HOST"
+fi
+
+if [ ! -f "crosstool-ng.tar.xz" ]; then
+	build_crosstool_ng
+fi
+
+if [ "$TARGET" != "crosstool-ng" ]; then
+	build_target "$HOST" "$TARGET"
+fi
+
+echo -e "\nDone.\n"
