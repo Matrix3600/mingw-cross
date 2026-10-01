@@ -146,7 +146,7 @@ do
 		for mirror in $mirrors; do
 			echo "From ${mirror}"
 			url="${mirror%/}/${filename}"
-			if wget -nv -T 120 --tries=20 -nc --progress=dot:binary -P "$DEST_DIR" "$url" && \
+			if wget -nv -T 120 --tries=5 -nc --progress=dot:binary -P "$DEST_DIR" "$url" && \
 					CT_DoVerifyDigest "${DEST_DIR}/${filename}" "${package}/${version}" ; then
 				success=true
 				break
