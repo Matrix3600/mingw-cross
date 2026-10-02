@@ -1,0 +1,24 @@
+diff --git a/packages/mpc/1.4.1/chksum b/packages/mpc/1.4.1/chksum
+new file mode 100644
+index 00000000..c2ce17e2
+--- /dev/null
++++ b/packages/mpc/1.4.1/chksum
+@@ -0,0 +1,4 @@
++md5 mpc-1.4.1.tar.xz 40c5fba305125279ea46041160e81daf
++sha1 mpc-1.4.1.tar.xz 3d9e196d973a822ae144d543c9d21023cef0870f
++sha256 mpc-1.4.1.tar.xz 91204cd32f164bd3b7c992d4a6a8ce6519511aadab30f78b6982d0bf8d73e931
++sha512 mpc-1.4.1.tar.xz cdfbe64e80e30df64dbd536e8104a6bb10471582415d5b45a1dd30eb2a312781b38389a9531243413c14e0f88866a35159b20e77900718f28c1030253a1305b9
+diff --git a/packages/mpc/1.4.1/version.desc b/packages/mpc/1.4.1/version.desc
+new file mode 100644
+index 00000000..e69de29b
+diff --git a/packages/mpc/package.desc b/packages/mpc/package.desc
+index 3700e5d4..aff0dc8c 100644
+--- a/packages/mpc/package.desc
++++ b/packages/mpc/package.desc
+@@ -2,5 +2,5 @@ repository='git https://gitlab.inria.fr/mpc/mpc.git'
+ bootstrap='autoreconf -i'
+ mirrors='https://www.multiprecision.org/downloads $(CT_Mirrors GNU mpc)'
+ relevantpattern='*.*|.'
+-archive_formats='.tar.gz'
++archive_formats='.tar.xz .tar.gz'
+ signature_format='packed/.sig'
