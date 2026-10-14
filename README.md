@@ -8,7 +8,7 @@ These [ready-to-use](https://github.com/Matrix3600/mingw-cross/releases) toolcha
 - Linux x86-64
 - Linux ARM64
 
-## Supported targets
+## Supported targets (Windows)
 
 | Target                                  | GCC    | Binutils | MinGW-w64 |
 |-----------------------------------------|:------:|:--------:|:---------:|
