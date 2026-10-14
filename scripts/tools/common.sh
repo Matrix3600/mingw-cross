@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
 CROSS_GNU_URL="https://github.com/Matrix3600"
-CROSS_GNU_VER="20260908"
+CROSS_GNU_VER="20261015"
 CROSS_MINGW_URL="https://github.com/Matrix3600"
-CROSS_MINGW_VER="20260810"
+CROSS_MINGW_VER="20261015"
 
 
 function build_crosstool_ng()
