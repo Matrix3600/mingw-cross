@@ -3,8 +3,8 @@
 #
 # <package>-<version>.tar.* | <url> ...
 #
-# If <version> if empty or non-numeric, the latest version of the package
-# supported by crosstool-NG is used.
+# If <version> contains a BASH pattern, the latest matching version of the
+# package supported by crosstool-NG is used.
 #
-gmp-x.tar.xz | https://ftp.gnu.org/gnu/gmp
-isl-x.tar.xz | https://libisl.sourceforge.io
+gmp-*.tar.xz | https://ftp.gnu.org/gnu/gmp
+isl-*.tar.xz | https://libisl.sourceforge.io

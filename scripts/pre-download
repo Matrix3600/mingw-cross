@@ -49,14 +49,15 @@ function CT_DoVerifyDigest()
 #
 # Get the latest version of a package.
 #
-# get_package_version <package-name>
+# get_package_version <package-name> <version-pattern>
 #
 function get_package_version() {
 	local pkgdir="${PACKAGES_DIR}/$1"
+	local pattern="$2"
 	if [ ! -d "$pkgdir" ]; then return 1; fi
 
 	local version
-	version="$({ cd "$pkgdir" && ls -dv -- */ | tail -n 1; } \
+	version="$({ cd "$pkgdir" && ls -dv -- ${pattern}/ | tail -n 1; } \
 		2>/dev/null)"
 	version=${version%/}
 	if [ -z "$version" ]; then return 2; fi
@@ -138,7 +139,7 @@ do
 		version=${BASH_REMATCH[2]}
 		ext=${BASH_REMATCH[3]}
 		if [[ ! $version =~ ^[0-9.]+$ ]]; then
-			version=$(get_package_version "$package")
+			version=$(get_package_version "$package" "$version")
 		fi
 		filename="${package}-${version}${ext}"
 
