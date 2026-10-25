@@ -52,17 +52,28 @@ function CT_DoVerifyDigest()
 # get_package_version <package-name> <version-pattern>
 #
 function get_package_version() {
-	local pkgdir="${PACKAGES_DIR}/$1"
+	local package_name="$1"
 	local pattern="$2"
-	if [ ! -d "$pkgdir" ]; then return 1; fi
+	local pkgdir="${PACKAGES_DIR}/${package_name}"
+	if [ ! -d "$pkgdir" ]; then
+		echo "[ERROR] Package not found: '${package_name}'" >&2
+		return 1
+	fi
+	if [[ ! $pattern =~ ^[][[:alnum:]_.:*?^!-]+$ ]]; then
+		echo "[ERROR] Invalid version pattern: '${pattern}'" >&2
+		return 2
+	fi
 
 	local version
-	version="$({ cd "$pkgdir" && ls -dv -- ${pattern}/ | tail -n 1; } \
+	version="$({ cd -- "$pkgdir" && ls -dv -- ${pattern}/ | tail -n 1; } \
 		2>/dev/null)"
 	version=${version%/}
-	if [ -z "$version" ]; then return 2; fi
+	if [ -z "$version" ]; then
+		echo "[ERROR] Version '${pattern}' not found for package '${package_name}'" >&2
+		return 3
+	fi
 
-	printf '%s' "$version"
+	printf '%s\n' "$version"
 	return 0
 }
 
@@ -73,7 +84,7 @@ function trim() {
 	var="${var#"${var%%[![:space:]]*}"}"
 	# Remove trailing whitespace characters
 	var="${var%"${var##*[![:space:]]}"}"
-	printf '%s' "$var"
+	printf '%s\n' "$var"
 }
 
 
@@ -121,6 +132,10 @@ if [ ! -f "$script_dir/$config_file" ]; then
 	exit 2
 fi
 
+export LC_ALL=""
+export LC_COLLATE="C"
+export LC_CTYPE="C"
+
 while IFS= read -r line <&3
 do
 	line=${line%%#*}	# Remove comments
@@ -130,7 +145,7 @@ do
 		IFS="|" read -r package_name mirrors <<< "$line"
 		package_name=$(trim "$package_name")
 
-		re="^(.+)-([^-]*)(\.tar\..+)$"
+		re="^(.+)-([^-]+)(\.tar\..+)$"
 		if [[ ! $package_name =~ $re ]]; then
 			echo "[ERROR] Invalid package name (${package_name})" >&2
 			exit 3
@@ -138,7 +153,7 @@ do
 		package=${BASH_REMATCH[1]}
 		version=${BASH_REMATCH[2]}
 		ext=${BASH_REMATCH[3]}
-		if [[ ! $version =~ ^[0-9.]+$ ]]; then
+		if [[ ! $version =~ ^[[:alnum:]_.]+$ ]]; then
 			version=$(get_package_version "$package" "$version")
 		fi
 		filename="${package}-${version}${ext}"
