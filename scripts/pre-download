@@ -96,6 +96,32 @@ function install_packages()
 }
 
 
+function download_package()
+{
+	local dest_dir="$1"
+	local mirrors="$2"
+	local filename="$3"
+	local pkg_subdir="$4"
+	if [ ! -f "${dest_dir}/${filename}" ]; then
+		show_progress_message "Downloading ${filename}"
+		local success=false
+		for mirror in $mirrors; do
+			echo "From ${mirror}"
+			local url="${mirror%/}/${filename}"
+			if wget -nv -T 120 --tries=5 -nc --progress=dot:binary -P "$dest_dir" "$url" && \
+					CT_DoVerifyDigest "${dest_dir}/${filename}" "$pkg_subdir" ; then
+				success=true
+				break
+			fi
+		done
+		if ! $success; then
+			echo "[ERROR] Unable to download ${filename}" >&2
+			return 1
+		fi
+	fi
+}
+
+
 DEST_DIR=$1
 if [ -z "$DEST_DIR" ]; then
 	DEST_DIR="source-tarballs"
@@ -158,20 +184,7 @@ do
 		fi
 		filename="${package}-${version}${ext}"
 
-		success=false
-		for mirror in $mirrors; do
-			echo "From ${mirror}"
-			url="${mirror%/}/${filename}"
-			if wget -nv -T 120 --tries=5 -nc --progress=dot:binary -P "$DEST_DIR" "$url" && \
-					CT_DoVerifyDigest "${DEST_DIR}/${filename}" "${package}/${version}" ; then
-				success=true
-				break
-			fi
-		done
-		if ! $success; then
-			echo "[ERROR] Unable to download ${filename}" >&2
-			exit 4
-		fi
+		download_package "$DEST_DIR" "$mirrors" "$filename" "${package}/${version}"
 	fi
 done 3<"$script_dir/$config_file"
 

@@ -66,10 +66,10 @@ function get_build_machine_type()
 
 function get_host_type()
 {
-	local HOST="$1"
+	local host="$1"
 
 	local host_type
-	host_type="$(sed 's/-unknown//g' <<< "$HOST")"
+	host_type="$(sed 's/-unknown//g' <<< "$host")"
 	case $host_type in
 		aarch64-linux-gnu)
 			host_type="linux-arm64" ;;
